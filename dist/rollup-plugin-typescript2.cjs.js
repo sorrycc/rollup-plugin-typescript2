@@ -17166,6 +17166,7 @@ class ConsoleContext {
         console.log(`${this.prefix}${lodash_10(message) ? message() : message}`);
     }
 }
+//# sourceMappingURL=context.js.map
 
 class RollupContext {
     constructor(verbosity, bail, context, prefix = "") {
@@ -17211,15 +17212,18 @@ class RollupContext {
         console.log(`${this.prefix}${text}`);
     }
 }
+//# sourceMappingURL=rollupcontext.js.map
 
 let tsModule;
 function setTypescriptModule(override) {
     tsModule = override;
 }
+//# sourceMappingURL=tsproxy.js.map
 
 function normalize(fileName) {
     return fileName.split("\\").join("/");
 }
+//# sourceMappingURL=normalize.js.map
 
 class LanguageServiceHost {
     constructor(parsedConfig, transformers) {
@@ -17314,6 +17318,7 @@ class LanguageServiceHost {
         return transformer;
     }
 }
+//# sourceMappingURL=host.js.map
 
 /**
  * Removes all key-value entries from the list cache.
@@ -23996,6 +24001,7 @@ class RollingCache {
         fs.renameSync(this.newCacheRoot, this.oldCacheRoot);
     }
 }
+//# sourceMappingURL=rollingcache.js.map
 
 var styles_1 = createCommonjsModule(function (module) {
 /*
@@ -24676,6 +24682,7 @@ class FormatHost {
     }
 }
 const formatHost = new FormatHost();
+//# sourceMappingURL=diagnostics-format-host.js.map
 
 class NoCache {
     exists(_name) {
@@ -24700,6 +24707,7 @@ class NoCache {
         return;
     }
 }
+//# sourceMappingURL=nocache.js.map
 
 function convertEmitOutput(output, references) {
     const out = { code: "", references };
@@ -24926,6 +24934,7 @@ class TsCache {
         return objectHash_1({ data, id }, this.hashOptions);
     }
 }
+//# sourceMappingURL=tscache.js.map
 
 function printDiagnostics(context, diagnostics, pretty) {
     lodash_3(diagnostics, (diagnostic) => {
@@ -24961,6 +24970,7 @@ function printDiagnostics(context, diagnostics, pretty) {
         }
     });
 }
+//# sourceMappingURL=print-diagnostics.js.map
 
 // tslint:disable-next-line:no-var-requires
 const createRollupFilter = require("rollup-pluginutils").createFilter;
@@ -25016,12 +25026,14 @@ function createFilter(context, pluginOptions, parsedConfig) {
     context.debug(() => `excluded:\n${JSON.stringify(excluded, undefined, 4)}`);
     return createRollupFilter(included, excluded);
 }
+//# sourceMappingURL=get-options-overrides.js.map
 
 function checkTsConfig(parsedConfig) {
     const module = parsedConfig.options.module;
     if (module !== tsModule.ModuleKind.ES2015 && module !== tsModule.ModuleKind.ESNext)
         throw new Error(`Incompatible tsconfig option. Module resolves to '${tsModule.ModuleKind[module]}'. This is incompatible with rollup, please use 'module: "ES2015"' or 'module: "ESNext"'.`);
 }
+//# sourceMappingURL=check-tsconfig.js.map
 
 function parseTsConfig(context, pluginOptions) {
     const fileName = tsModule.findConfigFile(process.cwd(), tsModule.sys.fileExists, pluginOptions.tsconfig);
@@ -25057,6 +25069,7 @@ function parseTsConfig(context, pluginOptions) {
     context.debug(`parsed tsconfig: ${JSON.stringify(parsedTsConfig, undefined, 4)}`);
     return { parsedTsConfig, fileName };
 }
+//# sourceMappingURL=parse-tsconfig.js.map
 
 // The injected id for helpers.
 const TSLIB = "tslib";
@@ -25074,6 +25087,7 @@ catch (e) {
     console.warn("Error loading `tslib` helper library.");
     throw e;
 }
+//# sourceMappingURL=tslib.js.map
 
 var semver = createCommonjsModule(function (module, exports) {
 exports = module.exports = SemVer;
@@ -27283,7 +27297,7 @@ const typescript = (options) => {
                     context.info(`rollup version: ${this.meta.rollupVersion}`);
                 if (!semver_32(tsModule.version, ">=2.4.0", { includePrerelease: true }))
                     throw new Error(`Installed typescript version '${tsModule.version}' is outside of supported range '>=2.4.0'`);
-                context.info(`rollup-plugin-typescript2 version: 0.24.4`);
+                context.info(`rollup-plugin-typescript2 version: 0.25.0`);
                 context.debug(() => `plugin options:\n${JSON.stringify(pluginOptions, (key, value) => key === "typescript" ? `version ${value.version}` : value, 4)}`);
                 context.debug(() => `rollup config:\n${JSON.stringify(rollupOptions, undefined, 4)}`);
                 context.debug(() => `tsconfig path: ${tsConfigPath}`);
@@ -27383,8 +27397,13 @@ const typescript = (options) => {
                 }
                 if (result.dts) {
                     const key = normalize(id);
-                    declarations[key] = { type: result.dts, map: result.dtsmap };
+                    declarations[key] = { type: result.dts, map: result.dtsmap, emitted: false };
                     context.debug(() => `${safe_5("generated declarations")} for '${key}'`);
+                    if (!pluginOptions.useTsconfigDeclarationDir) {
+                        declarations[key].emitted = true;
+                        self._emitDeclaration(this, key, ".d.ts", declarations[key].type);
+                        self._emitDeclaration(this, key, ".d.ts.map", declarations[key].map);
+                    }
                 }
                 const transformResult = { code: result.code, map: { mappings: "" } };
                 if (result.map) {
@@ -27398,7 +27417,7 @@ const typescript = (options) => {
         },
         generateBundle(bundleOptions) {
             self._ongenerate();
-            self._onwrite.call(this, bundleOptions);
+            self._onwrite(this, bundleOptions);
         },
         _ongenerate() {
             context.debug(() => `generating target ${generateRound + 1}`);
@@ -27422,7 +27441,32 @@ const typescript = (options) => {
             cache().done();
             generateRound++;
         },
-        _onwrite(_output) {
+        _emitDeclaration(pluginContext, key, extension, entry) {
+            if (!entry)
+                return;
+            let fileName = entry.name;
+            if (fileName.includes("?")) // HACK for rollup-plugin-vue, it creates virtual modules in form 'file.vue?rollup-plugin-vue=script.ts'
+                fileName = fileName.split("?", 1) + extension;
+            // If 'useTsconfigDeclarationDir' is given in the
+            // plugin options, directly write to the path provided
+            // by Typescript's LanguageService (which may not be
+            // under Rollup's output directory, and thus can't be
+            // emitted as an asset).
+            if (pluginOptions.useTsconfigDeclarationDir) {
+                context.debug(() => `${safe_5("writing declarations")} for '${key}' to '${fileName}'`);
+                tsModule.sys.writeFile(fileName, entry.text, entry.writeByteOrderMark);
+            }
+            else {
+                const relativePath = path.relative(process.cwd(), fileName);
+                context.debug(() => `${safe_5("emitting declarations")} for '${key}' to '${relativePath}'`);
+                pluginContext.emitFile({
+                    type: "asset",
+                    source: entry.text,
+                    fileName: relativePath,
+                });
+            }
+        },
+        _onwrite(pluginContext, _output) {
             if (!parsedConfig.options.declaration)
                 return;
             lodash_3(parsedConfig.fileNames, (name) => {
@@ -27433,45 +27477,24 @@ const typescript = (options) => {
                     context.debug(() => `skipping declarations for unused '${key}'`);
                     return;
                 }
-                context.debug(() => `generating missed declarations for '${key}'`);
+                context.debug(() => `${safe_5("generating missed declarations")} for '${key}'`);
                 const output = service.getEmitOutput(key, true);
                 const out = convertEmitOutput(output);
                 if (out.dts)
-                    declarations[key] = { type: out.dts, map: out.dtsmap };
+                    declarations[key] = { type: out.dts, map: out.dtsmap, emitted: false };
             });
-            const emitDeclaration = (key, extension, entry) => {
-                if (!entry)
+            lodash_3(declarations, (entry, key) => {
+                if (entry.emitted)
                     return;
-                let fileName = entry.name;
-                if (fileName.includes("?")) // HACK for rollup-plugin-vue, it creates virtual modules in form 'file.vue?rollup-plugin-vue=script.ts'
-                    fileName = fileName.split("?", 1) + extension;
-                // If 'useTsconfigDeclarationDir' is given in the
-                // plugin options, directly write to the path provided
-                // by Typescript's LanguageService (which may not be
-                // under Rollup's output directory, and thus can't be
-                // emitted as an asset).
-                if (pluginOptions.useTsconfigDeclarationDir) {
-                    context.debug(() => `${safe_5("emitting declarations")} for '${key}' to '${fileName}'`);
-                    tsModule.sys.writeFile(fileName, entry.text, entry.writeByteOrderMark);
-                }
-                else {
-                    const relativePath = path.relative(process.cwd(), fileName);
-                    context.debug(() => `${safe_5("emitting declarations")} for '${key}' to '${relativePath}'`);
-                    this.emitFile({
-                        type: "asset",
-                        source: entry.text,
-                        fileName: relativePath
-                    });
-                }
-            };
-            lodash_3(declarations, ({ type, map }, key) => {
-                emitDeclaration(key, ".d.ts", type);
-                emitDeclaration(key, ".d.ts.map", map);
+                entry.emitted = true;
+                self._emitDeclaration(pluginContext, key, ".d.ts", entry.type);
+                self._emitDeclaration(pluginContext, key, ".d.ts.map", entry.map);
             });
         },
     };
     return self;
 };
+//# sourceMappingURL=index.js.map
 
 module.exports = typescript;
 //# sourceMappingURL=rollup-plugin-typescript2.cjs.js.map

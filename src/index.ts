@@ -31,7 +31,7 @@ const typescript: PluginImpl<Partial<IOptions>> = (options) =>
 	let servicesHost: LanguageServiceHost;
 	let service: tsTypes.LanguageService;
 	let noErrors = true;
-	const declarations: { [name: string]: { type: tsTypes.OutputFile; map?: tsTypes.OutputFile } } = {};
+	const declarations: { [name: string]: { type: tsTypes.OutputFile; map?: tsTypes.OutputFile, emitted: boolean } } = {};
 	const allImportedFiles = new Set();
 
 	let _cache: TsCache;
@@ -250,8 +250,16 @@ const typescript: PluginImpl<Partial<IOptions>> = (options) =>
 				if (result.dts)
 				{
 					const key = normalize(id);
-					declarations[key] = { type: result.dts, map: result.dtsmap };
+					declarations[key] = { type: result.dts, map: result.dtsmap, emitted : false };
 					context.debug(() => `${blue("generated declarations")} for '${key}'`);
+
+					if (!pluginOptions.useTsconfigDeclarationDir)
+					{
+						declarations[key].emitted = true;
+
+						self._emitDeclaration(this, key, ".d.ts", declarations[key].type);
+						self._emitDeclaration(this, key, ".d.ts.map", declarations[key].map);
+					}
 				}
 
 				const transformResult: TransformSourceDescription = { code: result.code, map: { mappings: "" } };
@@ -272,7 +280,7 @@ const typescript: PluginImpl<Partial<IOptions>> = (options) =>
 		generateBundle(this: PluginContext, bundleOptions: OutputOptions): void
 		{
 			self._ongenerate();
-			self._onwrite.call(this, bundleOptions);
+			self._onwrite(this, bundleOptions);
 		},
 
 		_ongenerate(): void
@@ -313,7 +321,38 @@ const typescript: PluginImpl<Partial<IOptions>> = (options) =>
 			generateRound++;
 		},
 
-		_onwrite(this: PluginContext, _output: OutputOptions): void
+		_emitDeclaration(pluginContext: PluginContext, key: string, extension: string, entry?: tsTypes.OutputFile)
+		{
+			if (!entry)
+				return;
+
+			let fileName = entry.name;
+			if (fileName.includes("?")) // HACK for rollup-plugin-vue, it creates virtual modules in form 'file.vue?rollup-plugin-vue=script.ts'
+				fileName = fileName.split("?", 1) + extension;
+
+			// If 'useTsconfigDeclarationDir' is given in the
+			// plugin options, directly write to the path provided
+			// by Typescript's LanguageService (which may not be
+			// under Rollup's output directory, and thus can't be
+			// emitted as an asset).
+			if (pluginOptions.useTsconfigDeclarationDir)
+			{
+				context.debug(() => `${blue("writing declarations")} for '${key}' to '${fileName}'`);
+				tsModule.sys.writeFile(fileName, entry.text, entry.writeByteOrderMark);
+			}
+			else
+			{
+				const relativePath = relative(process.cwd(), fileName);
+				context.debug(() => `${blue("emitting declarations")} for '${key}' to '${relativePath}'`);
+				pluginContext.emitFile({
+					type: "asset",
+					source: entry.text,
+					fileName: relativePath,
+				});
+			}
+		},
+
+		_onwrite(pluginContext: PluginContext, _output: OutputOptions): void
 		{
 			if (!parsedConfig.options.declaration)
 				return;
@@ -329,48 +368,22 @@ const typescript: PluginImpl<Partial<IOptions>> = (options) =>
 					return;
 				}
 
-				context.debug(() => `generating missed declarations for '${key}'`);
+				context.debug(() => `${blue("generating missed declarations")} for '${key}'`);
 				const output = service.getEmitOutput(key, true);
 				const out = convertEmitOutput(output);
 				if (out.dts)
-					declarations[key] = { type: out.dts, map: out.dtsmap };
+					declarations[key] = { type: out.dts, map: out.dtsmap, emitted: false };
 			});
 
-			const emitDeclaration = (key: string, extension: string, entry?: tsTypes.OutputFile) =>
+			_.each(declarations, (entry, key) =>
 			{
-				if (!entry)
+				if (entry.emitted)
 					return;
 
-				let fileName = entry.name;
-				if (fileName.includes("?")) // HACK for rollup-plugin-vue, it creates virtual modules in form 'file.vue?rollup-plugin-vue=script.ts'
-					fileName = fileName.split("?", 1) + extension;
+				entry.emitted = true;
 
-				// If 'useTsconfigDeclarationDir' is given in the
-				// plugin options, directly write to the path provided
-				// by Typescript's LanguageService (which may not be
-				// under Rollup's output directory, and thus can't be
-				// emitted as an asset).
-				if (pluginOptions.useTsconfigDeclarationDir)
-				{
-					context.debug(() => `${blue("emitting declarations")} for '${key}' to '${fileName}'`);
-					tsModule.sys.writeFile(fileName, entry.text, entry.writeByteOrderMark);
-				}
-				else
-                {
-					const relativePath = relative(process.cwd(), fileName);
-					context.debug(() => `${blue("emitting declarations")} for '${key}' to '${relativePath}'`);
-					this.emitFile({
-						type: "asset",
-						source: entry.text,
-						fileName: relativePath
-					});
-				}
-			};
-
-			_.each(declarations, ({ type, map }, key) =>
-			{
-				emitDeclaration(key, ".d.ts", type);
-				emitDeclaration(key, ".d.ts.map", map);
+				self._emitDeclaration(pluginContext, key, ".d.ts", entry.type);
+				self._emitDeclaration(pluginContext, key, ".d.ts.map", entry.map);
 			});
 		},
 	};
